@@ -6,13 +6,10 @@ There are three types of dependency styles offered by setuptools:
 1) build system requirement, 2) required dependency and 3) optional
 dependency.
 
-.. attention::
-   Each dependency, regardless of type, needs to be specified according to :pep:`508`.
-   This allows adding version :pep:`range restrictions <440#version-specifiers>`
-   and :ref:`environment markers <environment-markers>`.
-   Please note however that public package indexes, such as `PyPI`_
-   might not accept packages that declare dependencies using
-   :pep:`direct URLs <440#direct-references>`.
+Each dependency, regardless of type, needs to be specified according to :pep:`508`
+and :pep:`440`.
+This allows adding version :pep:`range restrictions <440#version-specifiers>`
+and :ref:`environment markers <environment-markers>`.
 
 
 .. _build-requires:
@@ -21,10 +18,11 @@ Build system requirement
 ========================
 
 After organizing all the scripts and files and getting ready for packaging,
-there needs to be a way to specify what programs and libraries are actually needed
-do the packaging (in our case, ``setuptools`` of course).
-This needs to be specified in your ``pyproject.toml`` file
-(if you have forgot what this is, go to :doc:`/userguide/quickstart` or :doc:`/build_meta`):
+there needs to be a way to specify what programs and libraries (build backend)
+are actually needed to build the package for distribution. For Setuptools, the
+requisite library is ``setuptools``. Specify the build backend in a
+``pyproject.toml`` file (see also :doc:`/userguide/quickstart` or
+:doc:`/build_meta`):
 
 .. code-block:: toml
 
@@ -32,13 +30,44 @@ This needs to be specified in your ``pyproject.toml`` file
     requires = ["setuptools"]
     #...
 
-Please note that you should also include here any other ``setuptools`` plugin
-(e.g., :pypi:`setuptools-scm`, :pypi:`setuptools-golang`, :pypi:`setuptools-rust`)
+Also include any other ``setuptools`` plugins
+(e.g., :pypi:`setuptools_scm`, :pypi:`setuptools-golang`, :pypi:`setuptools-rust`)
 or build-time dependency (e.g., :pypi:`Cython`, :pypi:`cppy`, :pypi:`pybind11`).
+
+.. code-block:: toml
+
+    [build-system]
+    requires = ["setuptools", "cython", "setuptools_scm"]
+
+
+If the project depends on a feature introduced in a specific version of Setuptools,
+it is good practice to specify it as a lower bound:
+
+.. code-block:: toml
+
+    [build-system]
+    requires = ["setuptools >= 61.2"]
+
+Some may be tempted to also include an upper-bound for yet unreleased major
+versions (e.g. ``setuptools <= 70``) or pin to a specific version (e.g.
+``setuptools == 70.0.4``) in order to avoid the project being uninstallable
+should those backward-incompatible changes affect this release of the project.
+Setuptools maintainers recommend strongly against this precautionary approach.
+The team primarily maintains one release, the latest monotonically-increasing
+release, and encourages users to use that latest release (work at HEAD). As a
+result, the team is cognizant of and takes responsibility for making
+backward-incompatible changes and aims to mitigate the impact of any breaking
+changes prior to releasing that change. By pinning against an unreleased
+version, it causes toil (maintenance burden) for each and every project that
+does the pinning (and the consumers that use it) and increases the risk of
+erosion if maintenance is unsustained. This tradeoff between reproducibility
+and compatibility is especially stark because Setuptools frequently releases
+backward-incompatible releases for a variety of reasons, many of which won't
+affect a given project.
 
 .. note::
     In previous versions of ``setuptools``,
-    this used to be accomplished with the ``setup_requires`` keyword but is
+    the ``setup_requires`` keyword performed a similar function but is
     now considered deprecated in favor of the :pep:`517` style described above.
     To peek into how this legacy keyword is used, consult our :doc:`guide on
     deprecated practice (WIP) </deprecated/index>`.
@@ -176,9 +205,60 @@ The environmental markers that may be used for testing platform types are
 detailed in :pep:`508`.
 
 .. seealso::
-   If  environment markers are not enough an specific use case,
-   you can also consider creating a :ref:`backend wrapper <backend-wrapper>`
-   to implement custom detection logic.
+   Alternatively, a :ref:`backend wrapper <backend-wrapper>` can be used for
+   specific use cases where environment markers aren't sufficient.
+
+
+Direct URL dependencies
+-----------------------
+
+.. attention::
+   `PyPI`_ and other standards-conformant package indices **do not** accept
+   packages that declare dependencies using direct URLs. ``pip`` will accept them
+   when installing packages from the local filesystem or from another URL,
+   however.
+
+Dependencies that are not available on a package index but can be downloaded
+elsewhere in the form of a source repository or archive may be specified
+using a variant of :pep:`PEP 440's direct references <440#direct-references>`:
+
+.. tab:: pyproject.toml
+
+    .. code-block:: toml
+
+        [project]
+        # ...
+        dependencies = [
+            "Package-A @ git+https://example.net/package-a.git@main",
+            "Package-B @ https://example.net/archives/package-b.whl",
+        ]
+
+.. tab:: setup.cfg
+
+    .. code-block:: ini
+
+        [options]
+        #...
+        install_requires =
+            Package-A @ git+https://example.net/package-a.git@main
+            Package-B @ https://example.net/archives/package-b.whl
+
+.. tab:: setup.py
+
+    .. code-block:: python
+
+        setup(
+            install_requires=[
+               "Package-A @ git+https://example.net/package-a.git@main",
+               "Package-B @ https://example.net/archives/package-b.whl",
+            ],
+            ...,
+        )
+
+For source repository URLs, a list of supported protocols and VCS-specific
+features such as selecting certain branches or tags can be found in pip's
+documentation on `VCS support <https://pip.pypa.io/en/latest/topics/vcs-support/>`_.
+Supported formats for archive URLs are sdists and wheels.
 
 
 Optional dependencies
@@ -235,7 +315,7 @@ The name ``PDF`` is an arbitrary :pep:`identifier <685>` of such a list of depen
 which other components can refer and have them installed.
 
 A use case for this approach is that other package can use this "extra" for their
-own dependencies. For example, if ``Package-B`` needs ``Package-B`` with PDF support
+own dependencies. For example, if ``Package-B`` needs ``Package-A`` with PDF support
 installed, it might declare the dependency like this:
 
 .. tab:: pyproject.toml

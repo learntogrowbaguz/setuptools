@@ -1,21 +1,18 @@
-"""develop tests
-"""
+"""develop tests"""
 
 import os
-import sys
-import subprocess
-import platform
 import pathlib
-
-from setuptools.command import test
+import platform
+import subprocess
+import sys
 
 import pytest
-import pip_run.launch
 
+from setuptools._path import paths_on_pythonpath
 from setuptools.command.develop import develop
 from setuptools.dist import Distribution
-from . import contexts
-from . import namespaces
+
+from . import contexts, namespaces
 
 SETUP_PY = """\
 from setuptools import setup
@@ -85,6 +82,18 @@ class TestDevelop:
         cmd.run()
         # assert '0.0' not in foocmd_text
 
+    @pytest.mark.xfail(reason="legacy behavior retained for compatibility #4167")
+    def test_egg_link_filename(self):
+        settings = dict(
+            name='Foo $$$ Bar_baz-bing',
+        )
+        dist = Distribution(settings)
+        cmd = develop(dist)
+        cmd.ensure_finalized()
+        link = pathlib.Path(cmd.egg_link)
+        assert link.suffix == '.egg-link'
+        assert link.stem == 'Foo_Bar_baz_bing'
+
 
 class TestResolver:
     """
@@ -106,7 +115,6 @@ class TestResolver:
 class TestNamespaces:
     @staticmethod
     def install_develop(src_dir, target):
-
         develop_cmd = [
             sys.executable,
             'setup.py',
@@ -115,7 +123,7 @@ class TestNamespaces:
             str(target),
         ]
         with src_dir.as_cwd():
-            with test.test.paths_on_pythonpath([str(target)]):
+            with paths_on_pythonpath([str(target)]):
                 subprocess.check_call(develop_cmd)
 
     @pytest.mark.skipif(
@@ -154,7 +162,7 @@ class TestNamespaces:
             '-c',
             'import myns.pkgA; import myns.pkgB',
         ]
-        with test.test.paths_on_pythonpath([str(target)]):
+        with paths_on_pythonpath([str(target)]):
             subprocess.check_call(try_import)
 
         # additionally ensure that pkg_resources import works
@@ -163,47 +171,5 @@ class TestNamespaces:
             '-c',
             'import pkg_resources',
         ]
-        with test.test.paths_on_pythonpath([str(target)]):
+        with paths_on_pythonpath([str(target)]):
             subprocess.check_call(pkg_resources_imp)
-
-    @pytest.mark.xfail(
-        platform.python_implementation() == 'PyPy',
-        reason="Workaround fails on PyPy (why?)",
-    )
-    def test_editable_prefix(self, tmp_path, sample_project):
-        """
-        Editable install to a prefix should be discoverable.
-        """
-        prefix = tmp_path / 'prefix'
-
-        # figure out where pip will likely install the package
-        site_packages = prefix / next(
-            pathlib.Path(path).relative_to(sys.prefix)
-            for path in sys.path
-            if 'site-packages' in path and path.startswith(sys.prefix)
-        )
-        site_packages.mkdir(parents=True)
-
-        # install workaround
-        pip_run.launch.inject_sitecustomize(str(site_packages))
-
-        env = dict(os.environ, PYTHONPATH=str(site_packages))
-        cmd = [
-            sys.executable,
-            '-m',
-            'pip',
-            'install',
-            '--editable',
-            str(sample_project),
-            '--prefix',
-            str(prefix),
-            '--no-build-isolation',
-        ]
-        subprocess.check_call(cmd, env=env)
-
-        # now run 'sample' with the prefix on the PYTHONPATH
-        bin = 'Scripts' if platform.system() == 'Windows' else 'bin'
-        exe = prefix / bin / 'sample'
-        if sys.version_info < (3, 8) and platform.system() == 'Windows':
-            exe = str(exe)
-        subprocess.check_call([exe], env=env)

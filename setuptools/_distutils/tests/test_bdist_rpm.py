@@ -1,17 +1,14 @@
 """Tests for distutils.command.bdist_rpm."""
 
-import unittest
-import sys
 import os
-from test.support import run_unittest
-
-from distutils.core import Distribution
+import shutil  # noqa: F401
+import sys
 from distutils.command.bdist_rpm import bdist_rpm
+from distutils.core import Distribution
 from distutils.tests import support
-from distutils.spawn import find_executable
 
-from .py38compat import requires_zlib
-
+import pytest
+from test.support import requires_zlib
 
 SETUP_PY = """\
 from distutils.core import setup
@@ -23,38 +20,30 @@ setup(name='foo', version='0.1', py_modules=['foo'],
 """
 
 
-class BuildRpmTestCase(
+@pytest.fixture(autouse=True)
+def sys_executable_encodable():
+    try:
+        sys.executable.encode('UTF-8')
+    except UnicodeEncodeError:
+        pytest.skip("sys.executable is not encodable to UTF-8")
+
+
+mac_woes = pytest.mark.skipif(
+    "not sys.platform.startswith('linux')",
+    reason='spurious sdtout/stderr output under macOS',
+)
+
+
+@pytest.mark.usefixtures('save_env')
+@pytest.mark.usefixtures('save_argv')
+@pytest.mark.usefixtures('save_cwd')
+class TestBuildRpm(
     support.TempdirManager,
-    support.EnvironGuard,
-    support.LoggingSilencer,
-    unittest.TestCase,
 ):
-    def setUp(self):
-        try:
-            sys.executable.encode("UTF-8")
-        except UnicodeEncodeError:
-            raise unittest.SkipTest("sys.executable is not encodable to UTF-8")
-
-        super(BuildRpmTestCase, self).setUp()
-        self.old_location = os.getcwd()
-        self.old_sys_argv = sys.argv, sys.argv[:]
-
-    def tearDown(self):
-        os.chdir(self.old_location)
-        sys.argv = self.old_sys_argv[0]
-        sys.argv[:] = self.old_sys_argv[1]
-        super(BuildRpmTestCase, self).tearDown()
-
-    # XXX I am unable yet to make this test work without
-    # spurious sdtout/stderr output under Mac OS X
-    @unittest.skipUnless(
-        sys.platform.startswith('linux'), 'spurious sdtout/stderr output under Mac OS X'
-    )
+    @mac_woes
     @requires_zlib()
-    @unittest.skipIf(find_executable('rpm') is None, 'the rpm command is not found')
-    @unittest.skipIf(
-        find_executable('rpmbuild') is None, 'the rpmbuild command is not found'
-    )
+    @pytest.mark.skipif("not shutil.which('rpm')")
+    @pytest.mark.skipif("not shutil.which('rpmbuild')")
     def test_quiet(self):
         # let's create a package
         tmp_dir = self.mkdtemp()
@@ -66,16 +55,14 @@ class BuildRpmTestCase(
         self.write_file((pkg_dir, 'MANIFEST.in'), 'include foo.py')
         self.write_file((pkg_dir, 'README'), '')
 
-        dist = Distribution(
-            {
-                'name': 'foo',
-                'version': '0.1',
-                'py_modules': ['foo'],
-                'url': 'xxx',
-                'author': 'xxx',
-                'author_email': 'xxx',
-            }
-        )
+        dist = Distribution({
+            'name': 'foo',
+            'version': '0.1',
+            'py_modules': ['foo'],
+            'url': 'xxx',
+            'author': 'xxx',
+            'author_email': 'xxx',
+        })
         dist.script_name = 'setup.py'
         os.chdir(pkg_dir)
 
@@ -84,30 +71,22 @@ class BuildRpmTestCase(
         cmd.fix_python = True
 
         # running in quiet mode
-        cmd.quiet = 1
+        cmd.quiet = True
         cmd.ensure_finalized()
         cmd.run()
 
         dist_created = os.listdir(os.path.join(pkg_dir, 'dist'))
-        self.assertIn('foo-0.1-1.noarch.rpm', dist_created)
+        assert 'foo-0.1-1.noarch.rpm' in dist_created
 
         # bug #2945: upload ignores bdist_rpm files
-        self.assertIn(('bdist_rpm', 'any', 'dist/foo-0.1-1.src.rpm'), dist.dist_files)
-        self.assertIn(
-            ('bdist_rpm', 'any', 'dist/foo-0.1-1.noarch.rpm'), dist.dist_files
-        )
+        assert ('bdist_rpm', 'any', 'dist/foo-0.1-1.src.rpm') in dist.dist_files
+        assert ('bdist_rpm', 'any', 'dist/foo-0.1-1.noarch.rpm') in dist.dist_files
 
-    # XXX I am unable yet to make this test work without
-    # spurious sdtout/stderr output under Mac OS X
-    @unittest.skipUnless(
-        sys.platform.startswith('linux'), 'spurious sdtout/stderr output under Mac OS X'
-    )
+    @mac_woes
     @requires_zlib()
-    # http://bugs.python.org/issue1533164
-    @unittest.skipIf(find_executable('rpm') is None, 'the rpm command is not found')
-    @unittest.skipIf(
-        find_executable('rpmbuild') is None, 'the rpmbuild command is not found'
-    )
+    # https://bugs.python.org/issue1533164
+    @pytest.mark.skipif("not shutil.which('rpm')")
+    @pytest.mark.skipif("not shutil.which('rpmbuild')")
     def test_no_optimize_flag(self):
         # let's create a package that breaks bdist_rpm
         tmp_dir = self.mkdtemp()
@@ -119,16 +98,14 @@ class BuildRpmTestCase(
         self.write_file((pkg_dir, 'MANIFEST.in'), 'include foo.py')
         self.write_file((pkg_dir, 'README'), '')
 
-        dist = Distribution(
-            {
-                'name': 'foo',
-                'version': '0.1',
-                'py_modules': ['foo'],
-                'url': 'xxx',
-                'author': 'xxx',
-                'author_email': 'xxx',
-            }
-        )
+        dist = Distribution({
+            'name': 'foo',
+            'version': '0.1',
+            'py_modules': ['foo'],
+            'url': 'xxx',
+            'author': 'xxx',
+            'author_email': 'xxx',
+        })
         dist.script_name = 'setup.py'
         os.chdir(pkg_dir)
 
@@ -136,25 +113,15 @@ class BuildRpmTestCase(
         cmd = bdist_rpm(dist)
         cmd.fix_python = True
 
-        cmd.quiet = 1
+        cmd.quiet = True
         cmd.ensure_finalized()
         cmd.run()
 
         dist_created = os.listdir(os.path.join(pkg_dir, 'dist'))
-        self.assertIn('foo-0.1-1.noarch.rpm', dist_created)
+        assert 'foo-0.1-1.noarch.rpm' in dist_created
 
         # bug #2945: upload ignores bdist_rpm files
-        self.assertIn(('bdist_rpm', 'any', 'dist/foo-0.1-1.src.rpm'), dist.dist_files)
-        self.assertIn(
-            ('bdist_rpm', 'any', 'dist/foo-0.1-1.noarch.rpm'), dist.dist_files
-        )
+        assert ('bdist_rpm', 'any', 'dist/foo-0.1-1.src.rpm') in dist.dist_files
+        assert ('bdist_rpm', 'any', 'dist/foo-0.1-1.noarch.rpm') in dist.dist_files
 
         os.remove(os.path.join(pkg_dir, 'dist', 'foo-0.1-1.noarch.rpm'))
-
-
-def test_suite():
-    return unittest.TestLoader().loadTestsFromTestCase(BuildRpmTestCase)
-
-
-if __name__ == '__main__':
-    run_unittest(test_suite())

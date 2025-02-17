@@ -1,27 +1,26 @@
 """Tests for distutils.version."""
-import unittest
+
 import distutils
-from distutils.version import LooseVersion
-from distutils.version import StrictVersion
-from test.support import run_unittest
+from distutils.version import LooseVersion, StrictVersion
+
+import pytest
 
 
-class VersionTestCase(unittest.TestCase):
-    def setUp(self):
-        self.ctx = distutils.version.suppress_known_deprecation()
-        self.ctx.__enter__()
+@pytest.fixture(autouse=True)
+def suppress_deprecation():
+    with distutils.version.suppress_known_deprecation():
+        yield
 
-    def tearDown(self):
-        self.ctx.__exit__(None, None, None)
 
+class TestVersion:
     def test_prerelease(self):
         version = StrictVersion('1.2.3a1')
-        self.assertEqual(version.version, (1, 2, 3))
-        self.assertEqual(version.prerelease, ('a', 1))
-        self.assertEqual(str(version), '1.2.3a1')
+        assert version.version == (1, 2, 3)
+        assert version.prerelease == ('a', 1)
+        assert str(version) == '1.2.3a1'
 
         version = StrictVersion('1.2.0')
-        self.assertEqual(str(version), '1.2')
+        assert str(version) == '1.2'
 
     def test_cmp_strict(self):
         versions = (
@@ -49,21 +48,13 @@ class VersionTestCase(unittest.TestCase):
                 if wanted is ValueError:
                     continue
                 else:
-                    raise AssertionError(
-                        ("cmp(%s, %s) " "shouldn't raise ValueError") % (v1, v2)
-                    )
-            self.assertEqual(
-                res, wanted, 'cmp(%s, %s) should be %s, got %s' % (v1, v2, wanted, res)
-            )
+                    raise AssertionError(f"cmp({v1}, {v2}) shouldn't raise ValueError")
+            assert res == wanted, f'cmp({v1}, {v2}) should be {wanted}, got {res}'
             res = StrictVersion(v1)._cmp(v2)
-            self.assertEqual(
-                res, wanted, 'cmp(%s, %s) should be %s, got %s' % (v1, v2, wanted, res)
-            )
+            assert res == wanted, f'cmp({v1}, {v2}) should be {wanted}, got {res}'
             res = StrictVersion(v1)._cmp(object())
-            self.assertIs(
-                res,
-                NotImplemented,
-                'cmp(%s, %s) should be NotImplemented, got %s' % (v1, v2, res),
+            assert res is NotImplemented, (
+                f'cmp({v1}, {v2}) should be NotImplemented, got {res}'
             )
 
     def test_cmp(self):
@@ -80,24 +71,10 @@ class VersionTestCase(unittest.TestCase):
 
         for v1, v2, wanted in versions:
             res = LooseVersion(v1)._cmp(LooseVersion(v2))
-            self.assertEqual(
-                res, wanted, 'cmp(%s, %s) should be %s, got %s' % (v1, v2, wanted, res)
-            )
+            assert res == wanted, f'cmp({v1}, {v2}) should be {wanted}, got {res}'
             res = LooseVersion(v1)._cmp(v2)
-            self.assertEqual(
-                res, wanted, 'cmp(%s, %s) should be %s, got %s' % (v1, v2, wanted, res)
-            )
+            assert res == wanted, f'cmp({v1}, {v2}) should be {wanted}, got {res}'
             res = LooseVersion(v1)._cmp(object())
-            self.assertIs(
-                res,
-                NotImplemented,
-                'cmp(%s, %s) should be NotImplemented, got %s' % (v1, v2, res),
+            assert res is NotImplemented, (
+                f'cmp({v1}, {v2}) should be NotImplemented, got {res}'
             )
-
-
-def test_suite():
-    return unittest.TestLoader().loadTestsFromTestCase(VersionTestCase)
-
-
-if __name__ == "__main__":
-    run_unittest(test_suite())

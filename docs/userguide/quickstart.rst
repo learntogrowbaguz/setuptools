@@ -7,7 +7,7 @@ Installation
 
 You can install the latest version of ``setuptools`` using :pypi:`pip`::
 
-    pip install --upgrade setuptools
+    pip install --upgrade setuptools[core]
 
 Most of the times, however, you don't have to...
 
@@ -56,11 +56,31 @@ containing a ``build-system`` section similar to the example below:
 This section declares what are your build system dependencies, and which
 library will be used to actually do the packaging.
 
+.. note::
+
+   Package maintainers might be tempted to use ``setuptools[core]`` as the
+   requirement, given the guidance above. Avoid doing so, as the extra
+   is currently considered an internal implementation detail and is likely
+   to go away in the future and the Setuptools team will not support
+   compatibility for problems arising from packages published with this
+   extra declared. Vendored packages will satisfy the dependencies in
+   the most common isolated build scenarios.
+
+.. note::
+
+   Historically this documentation has unnecessarily listed ``wheel``
+   in the ``requires`` list, and many projects still do that. This is
+   not recommended, as the backend no longer requires the ``wheel``
+   package, and listing it explicitly causes it to be unnecessarily
+   required for source distribution builds.
+   You should only include ``wheel`` in ``requires`` if you need to explicitly
+   access it during build time (e.g. if your project needs a ``setup.py``
+   script that imports ``wheel``).
+
 In addition to specifying a build system, you also will need to add
 some package information such as metadata, contents, dependencies, etc.
-This can be done in the same ``pyproject.toml`` [#beta]_ file,
-or in a separated one: ``setup.cfg`` or ``setup.py`` (please note however
-that configuring new projects via ``setup.py`` is discouraged [#setup.py]_).
+This can be done in the same ``pyproject.toml`` file,
+or in a separated one: ``setup.cfg`` or ``setup.py`` [#setup.py]_.
 
 The following example demonstrates a minimum configuration
 (which assumes the project depends on :pypi:`requests` and
@@ -75,7 +95,7 @@ The following example demonstrates a minimum configuration
        version = "0.0.1"
        dependencies = [
            "requests",
-           'importlib-metadata; python_version<"3.8"',
+           'importlib-metadata; python_version<"3.10"',
        ]
 
     See :doc:`/userguide/pyproject_config` for more information.
@@ -91,7 +111,8 @@ The following example demonstrates a minimum configuration
         [options]
         install_requires =
             requests
-            importlib-metadata; python_version < "3.8"
+            importlib-metadata; python_version<"3.10"
+
 
     See :doc:`/userguide/declarative_config` for more information.
 
@@ -106,7 +127,7 @@ The following example demonstrates a minimum configuration
             version='0.0.1',
             install_requires=[
                 'requests',
-                'importlib-metadata; python_version == "3.8"',
+                'importlib-metadata; python_version<"3.10"',
             ],
         )
 
@@ -117,15 +138,14 @@ distributing into something that looks like the following
 (optional files marked with ``#``)::
 
     mypackage
-    ├── pyproject.toml
-    |   # setup.cfg or setup.py (depending on the confuguration method)
+    ├── pyproject.toml  # and/or setup.cfg/setup.py (depending on the configuration method)
     |   # README.rst or README.md (a nice description of your package)
     |   # LICENCE (properly chosen license information, e.g. MIT, BSD-3, GPL-3, MPL-2, etc...)
     └── mypackage
         ├── __init__.py
         └── ... (other Python files)
 
-With :ref:`build installed in you system <install-build>`, you can then run::
+With :ref:`build installed in your system <install-build>`, you can then run::
 
     python -m build
 
@@ -150,6 +170,27 @@ to specify to properly package your project.
    could have a diagram for that (explaining for example that "wheels" are
    built from "sdists" not the source tree).
 
+.. _setuppy_discouraged:
+.. admonition:: Info: Using ``setup.py``
+  :class: seealso
+
+  Setuptools offers first class support for ``setup.py`` files as a configuration
+  mechanism.
+
+  It is important to remember, however, that running this file as a
+  script (e.g. ``python setup.py sdist``) is strongly **discouraged**, and
+  that the majority of the command line interfaces are (or will be) **deprecated**
+  (e.g. ``python setup.py install``, ``python setup.py bdist_wininst``, ...).
+
+  We also recommend users to expose as much as possible configuration in a
+  more *declarative* way via the :doc:`pyproject.toml <pyproject_config>` or
+  :doc:`setup.cfg <declarative_config>`, and keep the ``setup.py`` minimal
+  with only the dynamic parts (or even omit it completely if applicable).
+
+  See `Why you shouldn't invoke setup.py directly`_ for more background.
+
+.. _Why you shouldn't invoke setup.py directly: https://blog.ganssle.io/articles/2021/10/setup-py-deprecated.html
+
 
 Overview
 ========
@@ -158,7 +199,7 @@ Package discovery
 -----------------
 For projects that follow a simple directory structure, ``setuptools`` should be
 able to automatically detect all :term:`packages <package>` and
-:term:`namespaces <namespace>`. However, complex projects might include
+:term:`namespaces <namespace package>`. However, complex projects might include
 additional folders and supporting files that not necessarily should be
 distributed (or that can confuse ``setuptools`` auto discovery algorithm).
 
@@ -166,7 +207,7 @@ Therefore, ``setuptools`` provides a convenient way to customize
 which packages should be distributed and in which directory they should be
 found, as shown in the example below:
 
-.. tab:: pyproject.toml (**BETA**) [#beta]_
+.. tab:: pyproject.toml
 
     .. code-block:: toml
 
@@ -176,6 +217,7 @@ found, as shown in the example below:
 
         # OR
         [tool.setuptools.packages.find]
+        # All the following settings are optional:
         where = ["src"]  # ["."] by default
         include = ["mypackage*"]  # ["*"] by default
         exclude = ["mypackage.tests*"]  # empty by default
@@ -186,36 +228,35 @@ found, as shown in the example below:
     .. code-block:: ini
 
         [options]
-        packages = find: # OR `find_namespaces:` if you want to use namespaces
+        packages = find: # OR `find_namespace:` if you want to use namespaces
 
-        [options.packages.find] # (always `find` even if `find_namespaces:` was used before)
-        # This section is optional
-        # Each entry in this section is optional, and if not specified, the default values are:
-        # `where=.`, `include=*` and `exclude=` (empty).
-        include=mypackage*
-        exclude=mypackage.tests*
+        [options.packages.find]  # (always `find` even if `find_namespace:` was used before)
+        # This section is optional as well as each of the following options:
+        where=src  # . by default
+        include=mypackage*  # * by default
+        exclude=mypackage.tests*  # empty by default
 
 .. tab:: setup.py [#setup.py]_
 
     .. code-block:: python
 
-        from setuptools import find_packages  # or find_namespace_packages
+        from setuptools import setup, find_packages  # or find_namespace_packages
 
         setup(
             # ...
             packages=find_packages(
-                where='.',
-                include=['mypackage*'],  # ["*"] by default
+                # All keyword arguments below are optional:
+                where='src',  # '.' by default
+                include=['mypackage*'],  # ['*'] by default
                 exclude=['mypackage.tests'],  # empty by default
             ),
             # ...
         )
 
 When you pass the above information, alongside other necessary information,
-``setuptools`` walks through the directory specified in ``where`` (omitted
-here as the package resides in the current directory) and filters the packages
+``setuptools`` walks through the directory specified in ``where`` (defaults to ``.``) and filters the packages
 it can find following the ``include`` patterns (defaults to ``*``), then it removes
-those that match the ``exclude`` patterns and returns a list of Python packages.
+those that match the ``exclude`` patterns (defaults to empty) and returns a list of Python packages.
 
 For more details and advanced use, go to :ref:`package_discovery`.
 
@@ -224,8 +265,7 @@ For more details and advanced use, go to :ref:`package_discovery`.
    have been improved to detect popular project layouts (such as the
    :ref:`flat-layout` and :ref:`src-layout`) without requiring any
    special configuration. Check out our :ref:`reference docs <package_discovery>`
-   for more information, but please keep in mind that this functionality is
-   still considered **beta** and might change in future releases.
+   for more information.
 
 
 Entry points and automatic script creation
@@ -280,7 +320,7 @@ Dependency management
 ---------------------
 Packages built with ``setuptools`` can specify dependencies to be automatically
 installed when the package itself is installed.
-The example below show how to configure this kind of dependencies:
+The example below shows how to configure this kind of dependencies:
 
 .. tab:: pyproject.toml
 
@@ -290,7 +330,7 @@ The example below show how to configure this kind of dependencies:
         # ...
         dependencies = [
             "docutils",
-            "requires <= 0.4",
+            "requests <= 0.4",
         ]
         # ...
 
@@ -333,13 +373,13 @@ Including Data Files
 Setuptools offers three ways to specify data files to be included in your packages.
 For the simplest use, you can simply use the ``include_package_data`` keyword:
 
-.. tab:: pyproject.toml (**BETA**) [#beta]_
+.. tab:: pyproject.toml
 
     .. code-block:: toml
 
         [tool.setuptools]
         include-package-data = true
-        # This is already the default behaviour if your are using
+        # This is already the default behaviour if you are using
         # pyproject.toml to configure your build.
         # You can deactivate that with `include-package-data = false`
 
@@ -361,8 +401,8 @@ For the simplest use, you can simply use the ``include_package_data`` keyword:
         )
 
 This tells setuptools to install any data files it finds in your packages.
-The data files must be specified via the |MANIFEST.in|_ file
-or automatically added by a :ref:`Revision Control System plugin
+The data files must be specified via the :ref:`MANIFEST.in <Using MANIFEST.in>`
+file or automatically added by a :ref:`Revision Control System plugin
 <Adding Support for Revision Control Systems>`.
 For more details, see :doc:`datafiles`.
 
@@ -378,19 +418,18 @@ Here's how to do it::
 
     pip install --editable .
 
-This creates a link file in your interpreter site package directory which
-associate with your source code. For more information, see :doc:`development_mode`.
+See :doc:`development_mode` for more information.
 
 .. tip::
 
     Prior to :ref:`pip v21.1 <pip:v21-1>`, a ``setup.py`` script was
     required to be compatible with development mode. With late
-    versions of pip, ``setup.cfg``-only projects may be installed in this mode.
+    versions of pip, projects without ``setup.py`` may be installed in this mode.
 
-    If you are experimenting with :doc:`configuration using pyproject.toml <pyproject_config>`,
-    or have version of ``pip`` older than v21.1, you might need to keep a
-    ``setup.py`` file in file in your repository if you want to use editable
-    installs (for the time being).
+    If you have a version of ``pip`` older than v21.1 or is using a different
+    packaging-related tool that does not support :pep:`660`, you might need to keep a
+    ``setup.py`` file in your repository if you want to use editable
+    installs.
 
     A simple script will suffice, for example:
 
@@ -400,8 +439,20 @@ associate with your source code. For more information, see :doc:`development_mod
 
         setup()
 
-    You can still keep all the configuration in :doc:`setup.cfg </userguide/declarative_config>`
-    (or :doc:`pyproject.toml </userguide/pyproject_config>`).
+    You can still keep all the configuration in
+    :doc:`pyproject.toml </userguide/pyproject_config>` and/or
+    :doc:`setup.cfg </userguide/declarative_config>`
+
+.. note::
+
+    When building from source code (for example, by ``python -m build``
+    or ``pip install -e .``)
+    some directories hosting build artefacts and cache files may be
+    created, such as ``build``, ``dist``, ``*.egg-info`` [#cache]_.
+    You can configure your version control system to ignore them
+    (see `GitHub's .gitignore template
+    <https://github.com/github/gitignore/blob/main/Python.gitignore>`_
+    for an example).
 
 
 Uploading your package to PyPI
@@ -412,14 +463,23 @@ distribution so others can use it. This functionality is provided by
 <PyPUG:tutorials/packaging-projects>`.
 
 
-Transitioning from ``setup.py`` to ``setup.cfg``
-------------------------------------------------
+Transitioning from ``setup.py`` to declarative config
+-----------------------------------------------------
 To avoid executing arbitrary scripts and boilerplate code, we are transitioning
-into a full-fledged ``setup.cfg`` to declare your package information instead
-of running ``setup()``. This inevitably brings challenges due to a different
-syntax. :doc:`Here </userguide/declarative_config>` we provide a quick guide to
-understanding how ``setup.cfg`` is parsed by ``setuptools`` to ease the pain of
-transition.
+from defining all your package information by running ``setup()`` to doing this
+declaratively - by using ``pyproject.toml`` (or older ``setup.cfg``).
+
+To ease the challenges of transitioning, we provide a quick
+:doc:`guide </userguide/pyproject_config>` to understanding how ``pyproject.toml``
+is parsed by ``setuptools``. (Alternatively, here is the
+:doc:`guide </userguide/declarative_config>` for ``setup.cfg``).
+
+.. note::
+
+    The approach ``setuptools`` would like to take is to eventually use a single
+    declarative format (``pyproject.toml``) instead of maintaining 2
+    (``pyproject.toml`` / ``setup.cfg``). Yet, chances are, ``setup.cfg`` will
+    continue to be maintained for a long time.
 
 .. _packaging-resources:
 
@@ -430,27 +490,25 @@ Packaging in Python can be hard and is constantly evolving.
 up-to-date references that can help you when it is time to distribute your work.
 
 
-.. |MANIFEST.in| replace:: ``MANIFEST.in``
-.. _MANIFEST.in: https://packaging.python.org/en/latest/guides/using-manifest-in/
-
 
 ----
 
 .. rubric:: Notes
 
 .. [#setup.py]
-   The ``setup.py`` file should be used only when custom scripting during the
-   build is necessary.
+   New projects are advised to avoid ``setup.py`` configurations (beyond the minimal stub)
+   when custom scripting during the build is not necessary.
    Examples are kept in this document to help people interested in maintaining or
    contributing to existing packages that use ``setup.py``.
    Note that you can still keep most of configuration declarative in
    :doc:`setup.cfg <declarative_config>` or :doc:`pyproject.toml
    <pyproject_config>` and use ``setup.py`` only for the parts not
    supported in those files (e.g. C extensions).
+   See :ref:`note <setuppy_discouraged>`.
 
-.. [#beta]
-   Support for adding build configuration options via the ``[tool.setuptools]``
-   table in the ``pyproject.toml`` file is still in **beta** stage.
-   See :doc:`/userguide/pyproject_config`.
+.. [#cache]
+   If you feel that caching is causing problems to your build, specially after changes in the
+   configuration files, consider removing ``build``, ``dist``, ``*.egg-info`` before
+   rebuilding or installing your project.
 
 .. _PyPI: https://pypi.org
