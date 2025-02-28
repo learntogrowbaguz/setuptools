@@ -1,17 +1,15 @@
 """Tests for distutils.command.install_headers."""
-import os
-import unittest
 
+import os
 from distutils.command.install_headers import install_headers
 from distutils.tests import support
-from test.support import run_unittest
+
+import pytest
 
 
-class InstallHeadersTestCase(
+@pytest.mark.usefixtures('save_env')
+class TestInstallHeaders(
     support.TempdirManager,
-    support.LoggingSilencer,
-    support.EnvironGuard,
-    unittest.TestCase,
 ):
     def test_simple_run(self):
         # we have two headers
@@ -24,7 +22,7 @@ class InstallHeadersTestCase(
 
         pkg_dir, dist = self.create_dist(headers=headers)
         cmd = install_headers(dist)
-        self.assertEqual(cmd.get_inputs(), headers)
+        assert cmd.get_inputs() == headers
 
         # let's run the command
         cmd.install_dir = os.path.join(pkg_dir, 'inst')
@@ -32,12 +30,4 @@ class InstallHeadersTestCase(
         cmd.run()
 
         # let's check the results
-        self.assertEqual(len(cmd.get_outputs()), 2)
-
-
-def test_suite():
-    return unittest.TestLoader().loadTestsFromTestCase(InstallHeadersTestCase)
-
-
-if __name__ == "__main__":
-    run_unittest(test_suite())
+        assert len(cmd.get_outputs()) == 2

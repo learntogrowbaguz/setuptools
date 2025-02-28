@@ -1,41 +1,39 @@
 """Tests for distutils.unixccompiler."""
+
 import os
 import sys
-import unittest
-from test.support import run_unittest
-from unittest.mock import patch
-
-from .py38compat import EnvironmentVarGuard
-
+import unittest.mock as mock
 from distutils import sysconfig
+from distutils.compat import consolidate_linker_args
 from distutils.errors import DistutilsPlatformError
 from distutils.unixccompiler import UnixCCompiler
 from distutils.util import _clear_cached_macosx_ver
 
+import pytest
+
 from . import support
+from .compat.py39 import EnvironmentVarGuard
 
 
-class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
-    def setUp(self):
-        super().setUp()
-        self._backup_platform = sys.platform
-        self._backup_get_config_var = sysconfig.get_config_var
-        self._backup_get_config_vars = sysconfig.get_config_vars
+@pytest.fixture(autouse=True)
+def save_values(monkeypatch):
+    monkeypatch.setattr(sys, 'platform', sys.platform)
+    monkeypatch.setattr(sysconfig, 'get_config_var', sysconfig.get_config_var)
+    monkeypatch.setattr(sysconfig, 'get_config_vars', sysconfig.get_config_vars)
 
-        class CompilerWrapper(UnixCCompiler):
-            def rpath_foo(self):
-                return self.runtime_library_dir_option('/foo')
 
-        self.cc = CompilerWrapper()
+@pytest.fixture(autouse=True)
+def compiler_wrapper(request):
+    class CompilerWrapper(UnixCCompiler):
+        def rpath_foo(self):
+            return self.runtime_library_dir_option('/foo')
 
-    def tearDown(self):
-        super().tearDown()
-        sys.platform = self._backup_platform
-        sysconfig.get_config_var = self._backup_get_config_var
-        sysconfig.get_config_vars = self._backup_get_config_vars
+    request.instance.cc = CompilerWrapper()
 
-    @unittest.skipIf(sys.platform == 'win32', "can't test on Windows")
-    def test_runtime_libdir_option(self):
+
+class TestUnixCCompiler(support.TempdirManager):
+    @pytest.mark.skipif('platform.system == "Windows"')
+    def test_runtime_libdir_option(self):  # noqa: C901
         # Issue #5900; GitHub Issue #37
         #
         # Ensure RUNPATH is added to extension modules with RPATH if
@@ -75,10 +73,7 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
 
         def do_darwin_test(syscfg_macosx_ver, env_macosx_ver, expected_flag):
             env = os.environ
-            msg = "macOS version = (sysconfig=%r, env=%r)" % (
-                syscfg_macosx_ver,
-                env_macosx_ver,
-            )
+            msg = f"macOS version = (sysconfig={syscfg_macosx_ver!r}, env={env_macosx_ver!r})"
 
             # Save
             old_gcv = sysconfig.get_config_var
@@ -94,10 +89,10 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
 
             # Run the test
             if expected_flag is not None:
-                self.assertEqual(self.cc.rpath_foo(), expected_flag, msg=msg)
+                assert self.cc.rpath_foo() == expected_flag, msg
             else:
-                with self.assertRaisesRegex(
-                    DistutilsPlatformError, darwin_ver_var + r' mismatch', msg=msg
+                with pytest.raises(
+                    DistutilsPlatformError, match=darwin_ver_var + r' mismatch'
                 ):
                     self.cc.rpath_foo()
 
@@ -129,19 +124,19 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
             return 'xxx'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), ['+s', '-L/foo'])
+        assert self.cc.rpath_foo() == ['+s', '-L/foo']
 
         def gcv(v):
             return 'gcc'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), ['-Wl,+s', '-L/foo'])
+        assert self.cc.rpath_foo() == ['-Wl,+s', '-L/foo']
 
         def gcv(v):
             return 'g++'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), ['-Wl,+s', '-L/foo'])
+        assert self.cc.rpath_foo() == ['-Wl,+s', '-L/foo']
 
         sysconfig.get_config_var = old_gcv
 
@@ -155,7 +150,10 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
                 return 'yes'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), '-Wl,--enable-new-dtags,-R/foo')
+        assert self.cc.rpath_foo() == consolidate_linker_args([
+            '-Wl,--enable-new-dtags',
+            '-Wl,-rpath,/foo',
+        ])
 
         def gcv(v):
             if v == 'CC':
@@ -164,7 +162,10 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
                 return 'yes'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), '-Wl,--enable-new-dtags,-R/foo')
+        assert self.cc.rpath_foo() == consolidate_linker_args([
+            '-Wl,--enable-new-dtags',
+            '-Wl,-rpath,/foo',
+        ])
 
         # GCC non-GNULD
         sys.platform = 'bar'
@@ -176,7 +177,7 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
                 return 'no'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), '-Wl,-R/foo')
+        assert self.cc.rpath_foo() == '-Wl,-R/foo'
 
         # GCC GNULD with fully qualified configuration prefix
         # see #7617
@@ -189,7 +190,10 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
                 return 'yes'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), '-Wl,--enable-new-dtags,-R/foo')
+        assert self.cc.rpath_foo() == consolidate_linker_args([
+            '-Wl,--enable-new-dtags',
+            '-Wl,-rpath,/foo',
+        ])
 
         # non-GCC GNULD
         sys.platform = 'bar'
@@ -201,7 +205,10 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
                 return 'yes'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), '-Wl,--enable-new-dtags,-R/foo')
+        assert self.cc.rpath_foo() == consolidate_linker_args([
+            '-Wl,--enable-new-dtags',
+            '-Wl,-rpath,/foo',
+        ])
 
         # non-GCC non-GNULD
         sys.platform = 'bar'
@@ -213,9 +220,9 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
                 return 'no'
 
         sysconfig.get_config_var = gcv
-        self.assertEqual(self.cc.rpath_foo(), '-Wl,-R/foo')
+        assert self.cc.rpath_foo() == '-Wl,-R/foo'
 
-    @unittest.skipIf(sys.platform == 'win32', "can't test on Windows")
+    @pytest.mark.skipif('platform.system == "Windows"')
     def test_cc_overrides_ldshared(self):
         # Issue #18080:
         # ensure that setting CC env variable also changes default linker
@@ -235,9 +242,10 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
             env['CC'] = 'my_cc'
             del env['LDSHARED']
             sysconfig.customize_compiler(self.cc)
-        self.assertEqual(self.cc.linker_so[0], 'my_cc')
+        assert self.cc.linker_so[0] == 'my_cc'
 
-    @unittest.skipIf(sys.platform == 'win32', "can't test on Windows")
+    @pytest.mark.skipif('platform.system == "Windows"')
+    @pytest.mark.usefixtures('disable_macos_customization')
     def test_cc_overrides_ldshared_for_cxx_correctly(self):
         """
         Ensure that setting CC env variable also changes default linker
@@ -249,9 +257,13 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
         def gcv(v):
             if v == 'LDSHARED':
                 return 'gcc-4.2 -bundle -undefined dynamic_lookup '
+            elif v == 'LDCXXSHARED':
+                return 'g++-4.2 -bundle -undefined dynamic_lookup '
             elif v == 'CXX':
                 return 'g++-4.2'
-            return 'gcc-4.2'
+            elif v == 'CC':
+                return 'gcc-4.2'
+            return ''
 
         def gcvs(*args, _orig=sysconfig.get_config_vars):
             if args:
@@ -260,24 +272,23 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
 
         sysconfig.get_config_var = gcv
         sysconfig.get_config_vars = gcvs
-        with patch.object(
-            self.cc, 'spawn', return_value=None
-        ) as mock_spawn, patch.object(
-            self.cc, '_need_link', return_value=True
-        ), patch.object(
-            self.cc, 'mkpath', return_value=None
-        ), EnvironmentVarGuard() as env:
+        with (
+            mock.patch.object(self.cc, 'spawn', return_value=None) as mock_spawn,
+            mock.patch.object(self.cc, '_need_link', return_value=True),
+            mock.patch.object(self.cc, 'mkpath', return_value=None),
+            EnvironmentVarGuard() as env,
+        ):
             env['CC'] = 'ccache my_cc'
             env['CXX'] = 'my_cxx'
             del env['LDSHARED']
             sysconfig.customize_compiler(self.cc)
-            self.assertEqual(self.cc.linker_so[0:2], ['ccache', 'my_cc'])
+            assert self.cc.linker_so[0:2] == ['ccache', 'my_cc']
             self.cc.link(None, [], 'a.out', target_lang='c++')
             call_args = mock_spawn.call_args[0][0]
             expected = ['my_cxx', '-bundle', '-undefined', 'dynamic_lookup']
             assert call_args[:4] == expected
 
-    @unittest.skipIf(sys.platform == 'win32', "can't test on Windows")
+    @pytest.mark.skipif('platform.system == "Windows"')
     def test_explicit_ldshared(self):
         # Issue #18080:
         # ensure that setting CC env variable does not change
@@ -298,7 +309,7 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
             env['CC'] = 'my_cc'
             env['LDSHARED'] = 'my_ld -bundle -dynamic'
             sysconfig.customize_compiler(self.cc)
-        self.assertEqual(self.cc.linker_so[0], 'my_ld')
+        assert self.cc.linker_so[0] == 'my_ld'
 
     def test_has_function(self):
         # Issue https://github.com/pypa/distutils/issues/64:
@@ -306,12 +317,34 @@ class UnixCCompilerTestCase(support.TempdirManager, unittest.TestCase):
         # FileNotFoundError: [Errno 2] No such file or directory: 'a.out'
         self.cc.output_dir = 'scratch'
         os.chdir(self.mkdtemp())
-        self.cc.has_function('abort', includes=['stdlib.h'])
+        self.cc.has_function('abort')
 
+    def test_find_library_file(self, monkeypatch):
+        compiler = UnixCCompiler()
+        compiler._library_root = lambda dir: dir
+        monkeypatch.setattr(os.path, 'exists', lambda d: 'existing' in d)
 
-def test_suite():
-    return unittest.TestLoader().loadTestsFromTestCase(UnixCCompilerTestCase)
+        libname = 'libabc.dylib' if sys.platform != 'cygwin' else 'cygabc.dll'
+        dirs = ('/foo/bar/missing', '/foo/bar/existing')
+        assert (
+            compiler.find_library_file(dirs, 'abc').replace('\\', '/')
+            == f'/foo/bar/existing/{libname}'
+        )
+        assert (
+            compiler.find_library_file(reversed(dirs), 'abc').replace('\\', '/')
+            == f'/foo/bar/existing/{libname}'
+        )
 
-
-if __name__ == "__main__":
-    run_unittest(test_suite())
+        monkeypatch.setattr(
+            os.path,
+            'exists',
+            lambda d: 'existing' in d and '.a' in d and '.dll.a' not in d,
+        )
+        assert (
+            compiler.find_library_file(dirs, 'abc').replace('\\', '/')
+            == '/foo/bar/existing/libabc.a'
+        )
+        assert (
+            compiler.find_library_file(reversed(dirs), 'abc').replace('\\', '/')
+            == '/foo/bar/existing/libabc.a'
+        )

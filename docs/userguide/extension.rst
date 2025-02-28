@@ -44,7 +44,7 @@ different aspect of the build. In ``setuptools``, however, these command
 objects are just a design abstraction that encapsulate logic and help to
 organise the code.
 
-You can overwrite exiting commands (or add new ones) by defining entry
+You can overwrite existing commands (or add new ones) by defining entry
 points in the ``distutils.commands`` group.  For example, if you wanted to add
 a ``foo`` command, you might add something like this to your project:
 
@@ -56,8 +56,8 @@ a ``foo`` command, you might add something like this to your project:
     distutils.commands =
          foo = mypackage.some_module:foo
 
-(Assuming, of course, that the ``foo`` class in ``mypackage.some_module`` is
-a ``setuptools.Command`` subclass.)
+Assuming, of course, that the ``foo`` class in ``mypackage.some_module`` is
+a ``setuptools.Command`` subclass (documented below).
 
 Once a project containing such entry points has been activated on ``sys.path``,
 (e.g. by running ``pip install``) the command(s) will be available to any
@@ -72,8 +72,21 @@ Custom commands should try to replicate the same overall behavior as the
 original classes, and when possible, even inherit from them.
 
 You should also consider handling exceptions such as ``CompileError``,
-``LinkError``, ``LibError``, among others.  These exceptions are available in
+``LinkError``, ``LibError``, among others. These exceptions are available in
 the ``setuptools.errors`` module.
+
+.. autoclass:: setuptools.Command
+   :members:
+
+
+Supporting sdists and editable installs in ``build`` sub-commands
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``build`` sub-commands (like ``build_py`` and ``build_ext``)
+are encouraged to implement the following protocol:
+
+.. autoclass:: setuptools.command.build.SubCommand
+   :members:
 
 
 Adding Arguments
@@ -103,20 +116,20 @@ The idea here is that the entry point defines a function that will be called
 to validate the ``setup()`` argument, if it's supplied.  The ``Distribution``
 object will have the initial value of the attribute set to ``None``, and the
 validation function will only be called if the ``setup()`` call sets it to
-a non-None value.  Here's an example validation function::
+a non-``None`` value.  Here's an example validation function::
 
     def assert_bool(dist, attr, value):
         """Verify that value is True, False, 0, or 1"""
         if bool(value) != value:
-            raise DistutilsSetupError(
-                "%r must be a boolean value (got %r)" % (attr,value)
+            raise SetupError(
+                f"{attr!r} must be a boolean value (got {value!r}"
             )
 
 Your function should accept three arguments: the ``Distribution`` object,
 the attribute name, and the attribute value.  It should raise a
 ``SetupError`` (from the ``setuptools.errors`` module) if the argument
-is invalid.  Remember, your function will only be called with non-None values,
-and the default value of arguments defined this way is always None.  So, your
+is invalid.  Remember, your function will only be called with non-``None`` values,
+and the default value of arguments defined this way is always ``None``.  So, your
 commands should always be prepared for the possibility that the attribute will
 be ``None`` when they access it later.
 
@@ -129,12 +142,12 @@ what values of that argument are valid.
 Customizing Distribution Options
 --------------------------------
 
-Plugins may wish to extend or alter the options on a Distribution object to
+Plugins may wish to extend or alter the options on a ``Distribution`` object to
 suit the purposes of that project. For example, a tool that infers the
 ``Distribution.version`` from SCM-metadata may need to hook into the
 option finalization. To enable this feature, Setuptools offers an entry
-point "setuptools.finalize_distribution_options". That entry point must
-be a callable taking one argument (the Distribution instance).
+point ``setuptools.finalize_distribution_options``. That entry point must
+be a callable taking one argument (the ``Distribution`` instance).
 
 If the callable has an ``.order`` property, that value will be used to
 determine the order in which the hook is called. Lower numbers are called

@@ -1,13 +1,11 @@
 """Tests for distutils.command.clean."""
-import os
-import unittest
 
+import os
 from distutils.command.clean import clean
 from distutils.tests import support
-from test.support import run_unittest
 
 
-class cleanTestCase(support.TempdirManager, support.LoggingSilencer, unittest.TestCase):
+class TestClean(support.TempdirManager):
     def test_simple_run(self):
         pkg_dir, dist = self.create_dist()
         cmd = clean(dist)
@@ -38,18 +36,10 @@ class cleanTestCase(support.TempdirManager, support.LoggingSilencer, unittest.Te
         cmd.run()
 
         # make sure the files where removed
-        for name, path in dirs:
-            self.assertFalse(os.path.exists(path), '%s was not removed' % path)
+        for _name, path in dirs:
+            assert not os.path.exists(path), f'{path} was not removed'
 
         # let's run the command again (should spit warnings but succeed)
         cmd.all = 1
         cmd.ensure_finalized()
         cmd.run()
-
-
-def test_suite():
-    return unittest.TestLoader().loadTestsFromTestCase(cleanTestCase)
-
-
-if __name__ == "__main__":
-    run_unittest(test_suite())
